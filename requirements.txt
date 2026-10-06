@@ -1,0 +1,6 @@
+mediapipe==0.10.21
+opencv-contrib-python==4.11.0.86
+numpy>=1.26,<2
+Pillow>=10.4,<13
+requests>=2.32,<3
+tqdm>=4.66,<5

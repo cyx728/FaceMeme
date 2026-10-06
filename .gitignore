@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+config.json
+models/
+outputs/
+output/
+.verification/
+.migration-backup/
+*/frames/
+*/memes/
+*/frames.json
+*/captions.json
+*/scores.jsonl

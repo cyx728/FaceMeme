@@ -1,0 +1,37 @@
+{
+  "api": {
+    "base_url": "https://api.openai.com/v1",
+    "api_key": "YOUR_API_KEY",
+    "model": "gpt-4o-mini",
+    "timeout_seconds": 90,
+    "max_retries": 2
+  },
+  "selection": {
+    "sample_every": 5,
+    "top_n": 20,
+    "threshold": null,
+    "min_gap_seconds": 1.0,
+    "max_faces": 5,
+    "crop_before_scoring": true,
+    "export_face_crop": true,
+    "auto_rotate_faces": true,
+    "min_face_size": 40
+  },
+  "caption": {
+    "max_chars": 12,
+    "context": "",
+    "prompt": null
+  },
+  "export": {
+    "style": "red_box",
+    "background_color": "#ff3b30",
+    "corner_radius": 12,
+    "text_margin": 12,
+    "stroke_width": 0,
+    "font_path": "C:/Windows/Fonts/msyh.ttc",
+    "font_size": 48,
+    "red_box_font_size": 32,
+    "max_side": 768,
+    "formats": ["jpg", "gif"]
+  }
+}
