@@ -13,3 +13,4 @@ output/
 */frames.json
 */captions.json
 */scores.jsonl
+*.mp4
