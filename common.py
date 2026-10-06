@@ -4,6 +4,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
+def default_font():
+    candidates = [Path("C:/Windows/Fonts/msyh.ttc"),
+                  Path("/System/Library/Fonts/PingFang.ttc"),
+                  Path("/System/Library/Fonts/STHeiti Medium.ttc"),
+                  Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf")]
+    return next((path for path in candidates if path.is_file()), None)
+
+
 def read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 

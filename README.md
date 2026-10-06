@@ -1,103 +1,209 @@
 # FaceMeme
 
-本地视频表情筛选 → 在线视觉模型短句配文 → 中文表情包图片导出。
+把视频里夸张、有趣的人脸表情做成可直接发到聊天里的表情包：自动挑选画面，生成简短中文配文，再导出带文字的 JPG 和 GIF。支持 Windows 和 macOS，三个步骤都有控制台进度条。
 
-各步骤均显示控制台进度条：step1 为模型下载、采样评分与帧导出；step2 为配文（含缓存命中及失败状态）；step3 为表情包生成。视频未报告总帧数时评分进度显示累计数量。
+## 快速开始
 
-## 安装与运行（PowerShell）
+先从 [Python 官网](https://www.python.org/downloads/) 安装 **Python 3.11（推荐）或3.12**。Windows 安装时勾选 **Add Python to PATH**。首次需要联网下载依赖和本地人脸模型，并准备支持图片输入的在线模型 API。
 
-项目已创建 Python 3.11 的 `.venv`。重新安装时运行：
+1. 把视频放到项目的 `input/` 文件夹，可以放多个。
+2. 起不同的名字，如 `朋友聚会.mp4`、`课堂瞬间.mov`。不要让两个视频只有扩展名不同；输出目录使用不含扩展名的视频名。
+3. Windows 双击 **run_windows.bat**；macOS 在项目目录打开终端，运行 **bash run_macos.command**。
+4. 按提示填写 API 基础地址、密钥和视觉模型名。其余配置自动补全；密钥输入隐藏，保存在本机 `config.json`。
+5. 等待完成，到 `output/{视频名}/memes/` 取表情包。每张默认生成 JPG 和静态 GIF。
+
+以下是从放置视频、重命名到默认运行的完整命令。先进入项目目录，将示例视频路径换成自己的路径。
+
+**Windows · PowerShell**
 
 ```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+New-Item -ItemType Directory -Force input | Out-Null
+Copy-Item "D:\我的视频\原视频.mp4" "input\聚会.mp4"
+# 如需再次改名，保留实际扩展名：
+Rename-Item "input\聚会.mp4" "朋友聚会.mp4"
+.\run_windows.bat
 ```
 
-编辑 `config.json` 的 `api`，填写支持图片输入的模型、API key、OpenAI 兼容接口地址。`base_url` 包含 `/v1`（或服务商对应路径），不要包含 `/chat/completions`。默认模型名仅为示例；以服务商实际支持为准。配置文件已忽略提交。`config.example.json` 是无密钥模板。
+**macOS · 终端**
+
+```bash
+mkdir -p input
+cp "$HOME/Movies/原视频.mp4" "input/聚会.mp4"
+# 如需再次改名，保留实际扩展名：
+mv "input/聚会.mp4" "input/朋友聚会.mp4"
+bash run_macos.command
+```
+
+macOS 若希望双击启动，先执行一次 `chmod +x run_macos.command`。如果系统限制双击运行，直接用上面的 `bash` 命令。
+
+一键入口先检查配置，再创建/检查 `.venv`、安装依赖，最后依次处理 `input/` 顶层所有视频。支持 MP4、MOV、MKV、AVI、WebM、M4V、MPEG、MPG、WMV、FLV、MTS、M2TS；实际解码能力取决于编码。中文和含空格的路径也可使用。
+
+配文会将选中的人脸裁剪图发送到配置的 API 服务商，并产生服务商费用；完整视频不上传。`config.json`、输入视频、模型和输出目录已从 Git 排除。
+
+## 输出与再次运行
+
+```text
+FaceMeme/
+├── input/
+│   ├── 朋友聚会.mp4
+│   └── 课堂瞬间.mov
+└── output/
+    ├── batch_report.json
+    └── 朋友聚会/
+        ├── frames/             # 裁剪图及 _full.png 完整原帧
+        ├── memes/              # JPG、GIF、index.json
+        ├── captions.json
+        ├── frames.json
+        ├── scores.jsonl
+        └── batch_state.json    # 一键入口续跑依据
+```
+
+再次运行会复用同一视频、同一筛选配置和同一 step1 代码生成的完整抽帧结果，跳过已成功且配文配置未变的 API 请求，再导出图片。视频内容、筛选配置或 step1 代码变化时，创建 `{视频名}_{时间戳}` 新目录；手动生成且无 `batch_state.json` 的旧结果也不会覆盖。后续可续跑匹配的新目录。
+
+一个视频失败后继续处理下一个。部分配文失败时导出成功部分，并在 `output/batch_report.json` 标为 `partial`；重跑补做失败配文。批次全部成功退出码0，失败或部分成功为1，中断为130。Ctrl+C 中断后保留已保存结果。无视频时提示放入文件，不调用 API。
+
+## 运行命令与配置
+
+### 一键入口参数
+
+两个系统的参数相同：
 
 ```powershell
-# 每5帧采样，选分数最高的20张，相邻结果至少间隔1秒
-.\.venv\Scripts\python.exe step1.py "D:\videos\input.mp4" --sample-every 5 --top-n 20
-.\.venv\Scripts\python.exe step2.py input.mp4
-.\.venv\Scripts\python.exe step3.py input.mp4
-
-# 或：所有分数 >= 35 的帧，不限制数量；设间隔为0可保留全部达标帧
-.\.venv\Scripts\python.exe step1.py "D:\videos\other.mp4" --threshold 35 --min-gap 0
-.\.venv\Scripts\python.exe step2.py other.mp4
-.\.venv\Scripts\python.exe step3.py other.mp4
+# Windows：仅补全和检查配置，不安装依赖、不处理视频
+.\run_windows.bat --check-config
+# 非交互：错误配置直接报错
+.\run_windows.bat --non-interactive
+# 指定视频目录和配置
+.\run_windows.bat --input "D:\videos" --config config.json
 ```
 
-默认输出在项目的 `output/` 目录下，以视频文件名去掉扩展名作为子目录名。`input.mp4` 输出到 `./output/input/`，不同视频使用独立目录。第二、三步传同一个视频名（或完整视频路径），也可用 `--manifest output/input/frames.json` 指定结果；`output/` 下只有一个视频结果目录时可省略视频名。多个结果目录时须明确选择。同名但不同路径/扩展名的视频会指向同一个目录，可用 step1 的 `--output` 区分，再为后两步指定 `--manifest`。
+```bash
+# macOS
+bash run_macos.command --check-config
+bash run_macos.command --non-interactive
+bash run_macos.command --input "$HOME/Movies" --config config.json
+```
 
-已有 `frames.json` 时 step1 拒绝覆盖，避免旧配文误用于新图片。所有程序支持 `--config`，完整参数见 `--help`。默认配置位置和输出位置相对于程序所在目录。原有自定义输出目录仍可通过 `--manifest` 使用。
+向导保留已有配置，用 `config.example.json` 默认值补齐缺项。字段不合法时列出字段名，可以输入如 `selection.top_n` 并填新值；输入 `q` 退出后自行编辑。JSON 语法损坏不会被覆盖。配置检查不发付费测试请求；模型是否支持图片需由服务商确认。
 
-## 评分模型与局限
+### config.json 常用设置
 
-使用 Google [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker)，其本地模型输出人脸关键点和52个表情系数。第一次运行会下载约3.6 MB的官方 `.task` 文件到 `models/`，之后本地 CPU 推理，无需 GPU 或在线评分。可通过 `--model` 指定已下载文件用于离线运行。
+配置使用双引号，不支持注释，末尾字段不要加逗号。现有配置会保留，下面是模板默认值。
 
-模型地址：<https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task>
-
-这里没有宣称存在可靠的通用“搞怪程度”预训练模型。评分是基于模型表情系数的可解释启发式指标：张嘴/噘嘴28%、嘴部扭曲22%、眼部夸张16%、眉部变化12%、左右不对称17%、笑容5%。分数范围0–100，不是概率，也没有经过人类搞怪标签校准；自然说话、打哈欠也可能高分。可以调整 `step1.py` 中的 `expression_score` 权重，以适应素材。初次使用优先 top-n；阈值应结合 `scores.jsonl` 的实际分布调整。
-
-每个采样帧取合格人脸的最高分，无人脸帧记为 null 且不入选；默认最多检测5张脸，脸框短边至少40像素。按分数排序贪心保留时间间隔，减少相似相邻帧。`--min-gap 0` 关闭此项；它是时间去重，不是视觉相似度去重。输出围绕得分最高的人脸扩大裁剪，并同时保留完整原帧。多人、侧脸、遮挡、运动模糊或很小的脸可能漏检。
-
-**注：画面中人脸可能不止一个，程序对各个合格人脸分别评分，以最高分作为该帧得分。** `selection.crop_before_scoring` 控制是否先裁剪再识别表情（默认 `true`）：使用本地 MediaPipe BlazeFace 先检测各个人脸，围绕每个脸框留出上下文，再逐脸交给 Face Landmarker。首次开启会额外下载官方 BlazeFace 模型。设为 `false` 时，直接对整帧进行多脸表情识别。BlazeFace short-range 对远处的小脸和明显侧脸可能漏检；裁剪模式只处理它检测到的人脸。
-
-`selection.export_face_crop` 独立控制导出图片是否以最高分人脸为主体（默认 `true`）。即使关闭识别前裁剪，也可以保持人脸主体导出；设为 `false` 时导出整帧。输出裁剪会保留脸框左右45%、上下40%的边距，并限制在原画面内。`_full.png` 始终保留完整原帧。
-
-`selection.auto_rotate_faces` 默认 `true`。在原方向、左右旋转90°及旋转180°的方向检测人脸，合并重复结果。仅接受额头到下巴方向与垂直方向偏差不超过40°、且眼睛确实位于嘴部上方的检测；按已确认正立的试转方向导出，不叠加预测倾角。原方向已确认正立时优先保留，防止其他方向的误检测将其倒置。横置脸旋转90°，真正倒置的脸旋转180°，不做连续角度矫正；无法确认方向的检测会跳过。`frames.json` 和各脸记录中的 `rotation_degrees` 表示顺时针旋转角度（负值表示逆时针）；完整原帧始终不旋转。设为 `false` 可关闭此功能并减少检测耗时。仅对人脸主体导出应用旋转；关闭 `export_face_crop` 时保持整帧原方向。
-
-## 配文与导出
-
-step2 将选出的**人脸上下文裁剪图**发送到配置的服务商。运行意味着这些图片离开本机；完整视频不会上传。默认 prompt 要求口语化、通常2–8个汉字、最多12字符，只输出 `{"caption":"配文"}`，并禁止身份推测和画面文字指令。可通过 `caption.context` 提供聊天语境；`caption.prompt` 可完全替换默认 prompt。长度和单行格式有程序校验，配文质量仍需自行判断。
-
-串行调用避免并发限流；失败最多重试两次，认证等非临时 HTTP 错误立即记为失败。每次成功或失败后保存进度。再次运行会跳过图片哈希、模型、prompt和长度设置一致的已成功结果；`--force` 重新生成。失败时退出码1，仍保留成功结果。超时重试可能造成重复计费。
-
-step3 通过 `export.style` 选择文字样式，默认 `red_box`。图片按原比例放大或缩小，导出图片最长边为 `export.max_side`（默认768像素），不填充为正方形、不拉伸也不裁掉人脸。叠加样式保持原图宽高比；`bottom_bar` 保留文字底栏，将图片和底栏的整体最长边缩放到规定长度。长句自动缩小或最多分两行，同时导出 JPG 和 GIF。默认使用 Windows 微软雅黑，可配置 `.ttf` / `.ttc` 中文字体。支持 PNG/JPEG/WebP/GIF；不添加水印。没有配文时默认拒绝导出，`--allow-partial` 可导出成功部分。配文可在 `captions.json` 手动修改。
-
-`export.formats` 默认为 `["jpg", "gif"]`，每张表情包生成同名 `.jpg` 和 `.gif`。GIF 为单帧静态图片，使用最多256色，不会自动生成动画。可以改为 `["png"]`、`["webp"]` 或其他组合。原有单值 `export.format` 仍可使用；同时存在时 `formats` 优先。`memes/index.json` 的 `files` 列出每张表情包的所有文件，`file` 保留第一个文件供兼容使用。修改样式或格式后重新运行 step3 会更新目标文件，目录中已有的其他格式文件会保留。
-
-| `export.style` | 效果 |
+| 字段 | 用途 / 默认值 |
 | --- | --- |
-| `red_box` | 默认：图片底部叠加红底圆角矩形，黑字 |
-| `bottom_bar` | 原有样式：图片下方增加白底黑字底栏 |
+| `api.base_url` | 基础地址，如 `https://api.openai.com/v1`；不要含 `/chat/completions` |
+| `api.api_key` / `api.model` | 密钥 / 支持图片的模型名；模板模型仅为示例 |
+| `api.timeout_seconds` / `max_retries` | 请求超时90秒 / 最多重试2次 |
+| `selection.sample_every` | 每5帧采样，1表示每帧 |
+| `selection.top_n` | 最高分20帧；threshold 非 null 时不生效 |
+| `selection.threshold` | 默认 null；设0–100数字选择所有达标帧 |
+| `selection.min_gap_seconds` | 结果至少间隔1秒；0关闭时间去重 |
+| `selection.max_faces` / `min_face_size` | 每帧最多5张脸 / 脸框短边至少40像素 |
+| `selection.crop_before_scoring` | true，先逐脸裁剪再评分 |
+| `selection.export_face_crop` | true，人脸主体导出；false为整帧 |
+| `selection.auto_rotate_faces` | true，横置人脸图自动转正 |
+| `caption.max_chars` | 配文最多12字符 |
+| `caption.context` / `prompt` | 补充聊天语境 / 完整替换默认 prompt；默认空字符串 / null |
+| `export.style` | 默认 red_box，见下表 |
+| `export.max_side` | 最长边768，保持比例，不填充为正方形 |
+| `export.formats` | 默认 `["jpg", "gif"]`；支持 png/jpg/jpeg/webp/gif |
+| `export.red_box_font_size` / `font_size` | 红框独立字号32 / 其他样式48像素 |
+| `export.font_path` | null 自动选择 Windows 微软雅黑或 macOS 中文字体；可填 .ttf/.ttc 路径 |
+| `export.background_color` | 红框底色 `#ff3b30` |
+| `export.corner_radius` / `text_margin` | 圆角12 / 边距12像素 |
+| `export.stroke_width` | 0无描边；白字描黑边，黑字描白边 |
+
+| style | 效果 |
+| --- | --- |
+| `red_box` | 图片底部叠加红底圆角矩形和黑字 |
+| `bottom_bar` | 图片下方增加白底黑字文字栏 |
 | `white_text` | 图片底部直接叠加白字 |
 | `black_text` | 图片底部直接叠加黑字 |
 
-`export.red_box_font_size` 单独控制红框样式字号，默认32像素；其他样式使用 `export.font_size`，默认48像素。实际排版空间不足时仍会自动缩小。
+叠加样式保持原图宽高比；底栏样式将图片与文字栏整体缩放到指定最长边。长句缩小或最多分两行。GIF 为单帧静态图片，最多256色。旧的其他格式文件不会自动删除，`memes/index.json` 的 `files` 列出本轮生成文件。旧版 `export.format` 仍支持，同时存在时 `formats` 优先。
 
-可在 `config.json` 的 `export` 中调整 `background_color`（红框底色，默认 `#ff3b30`）、`corner_radius`（默认12像素）、`text_margin`（叠加边距及红框内边距，默认12像素）和 `stroke_width`（默认0，无描边；白字描黑边，黑字描白边）。这四项用于叠加样式；原有 `bottom_bar` 保持原来的底栏排版。空间不足时边距会收缩、文字会缩小；过小图片无法容纳文字时会明确报错。
+### 单独执行每一步
 
-也可单次覆盖样式，无需重新抽帧或重新调用 API：
+一键入口安装环境后，使用以下命令，无需激活 venv。
 
-```powershell
-.\.venv\Scripts\python.exe step3.py input.mp4 --style white_text
-```
-
-输出：
-
-```text
-./
-└── output/
-    └── {视频名}/
-        ├── frames/
-        ├── memes/
-        │   └── index.json
-        ├── captions.json
-        ├── frames.json
-        └── scores.jsonl
-```
-
-- `scores.jsonl`：所有采样帧的得分、脸框、评分组成和表情系数。
-- `frames.json`：选中结果、视频路径、帧号、时间、分数和图片路径。
-- `frames/`：人脸上下文裁剪图及 `_full.png` 完整帧。
-- `captions.json`：按稳定帧ID关联的配文、图片哈希和失败记录。
-- `memes/`：表情包及 `index.json`（配文、分数、原视频时间）。
-
-## 离线验证
+**Windows**
 
 ```powershell
+.\.venv\Scripts\python.exe step1.py "input\朋友聚会.mp4"
+.\.venv\Scripts\python.exe step2.py "朋友聚会.mp4"
+.\.venv\Scripts\python.exe step3.py "朋友聚会.mp4"
+# 只换样式，不重新调用 API
+.\.venv\Scripts\python.exe step3.py "朋友聚会.mp4" --style white_text
+```
+
+**macOS**
+
+```bash
+.venv/bin/python step1.py "input/朋友聚会.mp4"
+.venv/bin/python step2.py "朋友聚会.mp4"
+.venv/bin/python step3.py "朋友聚会.mp4"
+.venv/bin/python step3.py "朋友聚会.mp4" --style white_text
+```
+
+其他参数如下，Windows 将 `.venv/bin/python` 换成 `.\.venv\Scripts\python.exe`：
+
+```bash
+# 更密集采样，只选10张，间隔2秒
+.venv/bin/python step1.py "input/朋友聚会.mp4" --sample-every 2 --top-n 10 --min-gap 2 --output output/聚会精选
+# 全部评分 >=35 的采样帧，关闭时间去重
+.venv/bin/python step1.py "input/朋友聚会.mp4" --threshold 35 --min-gap 0 --output output/聚会阈值
+# 自定义目录须向后两步指定 manifest
+.venv/bin/python step2.py --manifest output/聚会精选/frames.json
+.venv/bin/python step3.py --manifest output/聚会精选/frames.json
+# 重做所有配文；导出成功部分；指定配置及字体
+.venv/bin/python step2.py "朋友聚会.mp4" --force
+.venv/bin/python step3.py "朋友聚会.mp4" --allow-partial
+.venv/bin/python step3.py "朋友聚会.mp4" --config config.json --font "/path/to/chinese.ttf"
+```
+
+`--top-n` 与 `--threshold` 互斥，命令行优先于配置。手动 step1 不覆盖已有 `frames.json`，需改 `--output`。第二、三步可传视频路径、视频名或 `--manifest`；output 下只有一个结果目录时可省略视频名。所有程序支持 `--help`。
+
+## 常见问题
+
+- **找不到 Python或版本不支持：** 安装3.11或3.12，重开终端。项目所用 MediaPipe 不按 Python 3.14 配置。
+- **从 Windows 搬到 Mac 后 .venv 报错：** 虚拟环境不能跨系统使用，将 `.venv` 改名为备份后重新启动，入口会重建。
+- **安装或下载失败：** 检查网络、代理和磁盘空间，再次启动。入口不绕过系统代理，成功安装后不重复安装。
+- **API 401/403、429或模型不支持图片：** 核对密钥、额度、地址和模型；失败记录见 captions.json。临时错误会重试，超时重试可能重复计费。
+- **字体找不到：** 将 font_path 设为 null，或填写本机中文字体路径。向导会辅助修正跨系统旧字体路径。
+- **重复视频名：** 重命名视频，保留真实扩展名；不要用改扩展名伪装视频格式。
+- **重新筛选或换样式：** 改筛选配置后运行一键入口；只改样式、尺寸或格式可直接重跑 step3。
+
+## 技术方法与限制
+
+### 本地表情评分
+
+使用 Google [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker)，输出人脸关键点和52个表情系数。首次下载官方 Face Landmarker 和 BlazeFace short-range 模型到 models，之后本地 CPU 推理，无需 GPU。step1 的 `--model` 可指定已有 .task 文件。
+
+“搞怪评分”为启发式指标，不是校准过的人类幽默评分或概率：张嘴/噘嘴28%、嘴部扭曲22%、眼部夸张16%、眉部变化12%、左右不对称17%、笑容5%，范围0–100。说话、打哈欠也可能高分。可调整 step1 的 expression_score 权重；初次优先 top-n，阈值参考 scores.jsonl 分布。
+
+**画面可能包含多张人脸。** 程序逐脸评分、帧得分取最高值；无人脸帧记 null且不入选。按分数贪心保持时间间隔，这是时间去重而非视觉去重。人脸导出左右扩展45%、上下40%边距，限制在原图内，另保留完整原帧。小脸、侧脸、遮挡和模糊可能漏检。
+
+自动旋转在0°、左右90°、180°检测并合并重复脸，只接受额头至下巴轴线偏差不超过40°、眼睛位于嘴部上方的结果。原方向已正立时优先保留，不叠加预测倾角；无法确认朝向则跳过，不做连续角度矫正。rotation_degrees 为顺时针角度，负数为逆时针。整帧导出及完整原帧不旋转。多方向检测增加耗时，模型仍可能误判。
+
+### 在线配文与结果关联
+
+step2 使用 OpenAI 兼容 `/chat/completions` 图片输入。默认 prompt 要求口语化、通常2–8汉字、最多12字符，只返回 `{"caption":"配文"}`，不猜身份、不执行图片文字指令。程序校验 JSON、单行和长度；文案质量仍需自行判断。
+
+请求串行运行，每次保存进度；图片哈希、模型、API 地址、prompt和字符上限一致时复用成功配文。step3 检查图片哈希避免配文错配。可手动修改 captions.json 的文字再导出。认证等非临时错误不重试。
+
+scores.jsonl 保存各采样帧评分、脸框、表情系数；frames.json 保存入选帧ID、时间、分数、图片路径和旋转角度；captions.json 保存文字及失败记录；memes/index.json 保存导出文件、短句、分数和原视频时间。batch_state.json 记录视频哈希、筛选配置及 step1 代码版本；batch_report.json 汇总一键执行状态。
+
+### 离线验证
+
+```powershell
+# Windows
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-验证使用本地假 API 检查三步衔接、配文缓存与图片导出，不消耗在线额度。实际视频的筛选质量、服务商视觉能力与生成文案质量取决于素材及配置。
+```bash
+# macOS
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+离线测试使用假 API，不消耗在线额度。实际筛选和配文质量取决于素材、模型及配置。

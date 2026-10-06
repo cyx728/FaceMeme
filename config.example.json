@@ -28,7 +28,7 @@
     "corner_radius": 12,
     "text_margin": 12,
     "stroke_width": 0,
-    "font_path": "C:/Windows/Fonts/msyh.ttc",
+    "font_path": null,
     "font_size": 48,
     "red_box_font_size": 32,
     "max_side": 768,

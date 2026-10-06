@@ -12,10 +12,12 @@ import numpy as np
 
 from PIL import Image
 
-from common import write_json, read_json, resolve_manifest, video_output_dir
+from common import default_font, write_json, read_json, resolve_manifest, video_output_dir
 from step1 import expression_score, select_frames, rotate_face, original_box, score_faces
 from step2 import run as caption_run, validate_caption
 from step3 import STYLES, render, run as export_run
+
+FONT = str(default_font())
 
 
 class PipelineTests(unittest.TestCase):
@@ -42,7 +44,7 @@ class PipelineTests(unittest.TestCase):
                 Image.new("RGB", size, background).save(source)
                 for style in STYLES:
                     with self.subTest(size=size, style=style):
-                        picture = render(source, "懂了但没完全懂", "C:/Windows/Fonts/msyh.ttc", 48, 768, style=style)
+                        picture = render(source, "懂了但没完全懂", FONT, 48, 768, style=style)
                         self.assertEqual(max(picture.size), 768)
                         if style != "bottom_bar":
                             self.assertLessEqual(abs(picture.width * size[1] - picture.height * size[0]), max(size))
@@ -141,7 +143,7 @@ class PipelineTests(unittest.TestCase):
                 config = root / "config.json"
                 write_json(config, {"api": {"base_url": f"http://127.0.0.1:{server.server_port}/v1",
                                             "api_key": "offline-test", "model": "fake-vision"},
-                                    "export": {"font_path": "C:/Windows/Fonts/msyh.ttc", "style": "bottom_bar", "formats": ["png"]}})
+                                    "export": {"font_path": FONT, "style": "bottom_bar", "formats": ["png"]}})
                 args = argparse.Namespace(config=str(config), manifest=str(manifest), output=None, force=False)
                 self.assertEqual(caption_run(args), 0)
                 self.assertEqual(caption_run(args), 0)

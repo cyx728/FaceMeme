@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from tqdm import tqdm
 
-from common import ROOT, image_path, load_config, positive, read_json, resolve_manifest, write_json
+from common import ROOT, default_font, image_path, load_config, positive, read_json, resolve_manifest, write_json
 
 STYLES = ("red_box", "bottom_bar", "white_text", "black_text")
 
@@ -93,7 +93,10 @@ def run(args):
     captions_path = Path(args.captions).resolve() if args.captions else manifest_path.parent / "captions.json"
     captions = read_json(captions_path)["captions"]
     output = Path(args.output).resolve() if args.output else manifest_path.parent / "memes"
-    font_path = Path(args.font or config.get("font_path", "C:/Windows/Fonts/msyh.ttc"))
+    font_value = args.font or config.get("font_path")
+    font_path = Path(font_value) if font_value else default_font()
+    if font_path is None:
+        raise ValueError("Chinese font not found; set export.font_path or --font")
     if not font_path.is_absolute():
         font_path = Path(args.config).resolve().parent / font_path
     if not font_path.is_file():
